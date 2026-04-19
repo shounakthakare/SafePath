@@ -1,11 +1,12 @@
-import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useNavigate, Navigate } from 'react-router-dom';
+import { motion, Variants } from 'framer-motion';
 import { QrCode, ShieldCheck, Siren } from 'lucide-react';
 import Layout from '../../components/Layout/Layout';
 import GlassCard from '../../components/GlassCard/GlassCard';
 import Button from '../../components/Button/Button';
+import { useAppStore } from '../../store/useAppStore';
 
-const CARD_VARIANTS = {
+const CARD_VARIANTS: Variants = {
   hidden:  { opacity: 0, y: 28 },
   visible: (i: number) => ({
     opacity: 1, y: 0,
@@ -15,6 +16,19 @@ const CARD_VARIANTS = {
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const guestProfile = useAppStore((s) => s.guestProfile);
+  const activeRole   = useAppStore((s) => s.activeRole);
+
+  // Auto-login from cache
+  if (guestProfile) {
+    return <Navigate to="/guest-dashboard" replace />;
+  }
+  if (activeRole === 'staff') {
+    return <Navigate to="/staff" replace />;
+  }
+  if (activeRole === 'responder') {
+    return <Navigate to="/responder" replace />;
+  }
 
   const roles = [
     {

@@ -4,7 +4,7 @@ import {
   BellRing, Map, Megaphone, BarChart2, Users,
   CheckCircle, Sparkles, LogOut, RefreshCw,
   UserPlus, Copy, ExternalLink, Download,
-  Mail, Phone, QrCode,
+  Mail, Phone, QrCode, Trash2
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import toast from 'react-hot-toast';
@@ -551,6 +551,7 @@ export default function StaffDashboard() {
 
   const dangerZones      = useAppStore((s) => s.dangerZones);
   const toggleDangerZone = useAppStore((s) => s.toggleDangerZone);
+  const setActiveRole    = useAppStore((s) => s.setActiveRole);
 
   const activeAlerts   = alerts.filter((a) => a.status === 'active');
   const resolvedAlerts = alerts.filter((a) => a.status === 'acknowledged');
@@ -576,10 +577,11 @@ export default function StaffDashboard() {
   };
 
   useEffect(() => { 
+    setActiveRole('staff');
     fetchRooms(); fetchStats(); fetchAlerts(); fetchBroadcasts(); 
     const id = setInterval(() => { fetchAlerts(); fetchBroadcasts(); }, 3000);
     return () => clearInterval(id);
-  }, [fetchRooms, fetchStats, fetchAlerts, fetchBroadcasts]);
+  }, [fetchRooms, fetchStats, fetchAlerts, fetchBroadcasts, setActiveRole]);
 
   useEffect(() => {
     if (activeTab === 'map' || activeTab === 'occupancy') { fetchRooms(); fetchStats(); }
@@ -775,11 +777,30 @@ export default function StaffDashboard() {
                 </div>
               </GlassCard>
               <div>
-                <h3 className="text-white/45 text-xs font-semibold uppercase tracking-wider mb-3">Recent Broadcasts</h3>
+                <div className="flex items-center justify-between mb-3 max-w-2xl">
+                  <h3 className="text-white/45 text-xs font-semibold uppercase tracking-wider">Recent Broadcasts</h3>
+                  {broadcastMessages.length > 0 && (
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('Delete all broadcasts?')) return;
+                        try {
+                          await api.clearAllBroadcasts();
+                          fetchBroadcasts();
+                          toast.success('All broadcasts cleared');
+                        } catch {
+                          toast.error('Failed to clear broadcasts');
+                        }
+                      }}
+                      className="text-red-400 text-xs hover:text-red-300 transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
                 <div className="flex flex-col gap-2 max-w-2xl">
                   <AnimatePresence>
                     {broadcastMessages.slice(0, 5).map((msg, idx) => (
-                      <motion.div key={idx} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+                      <motion.div key={msg.id || idx} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
                         className="bg-white/5 border border-white/10 rounded-xl p-3 flex gap-3 items-start">
                         <span className="text-white/35 text-xs whitespace-nowrap mt-0.5">
                           {msg.timestamp.split('T')[1]?.substring(0, 5) ?? msg.timestamp}
@@ -787,7 +808,22 @@ export default function StaffDashboard() {
                         <span className="bg-gold/20 text-gold text-xs rounded-full px-2 py-0.5 whitespace-nowrap">
                           {msg.target.startsWith('room') ? 'Room Targeted' : TARGET_LABELS[msg.target] || 'General'}
                         </span>
-                        <p className="text-white/65 text-sm">{msg.message}</p>
+                        <p className="text-white/65 text-sm flex-1">{msg.message}</p>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.deleteBroadcast(msg.id);
+                              fetchBroadcasts();
+                              toast.success('Broadcast deleted');
+                            } catch {
+                              toast.error('Failed to delete');
+                            }
+                          }}
+                          className="text-white/20 hover:text-red-400 transition-colors"
+                          title="Delete Broadcast"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </motion.div>
                     ))}
                   </AnimatePresence>

@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:5000/api';
+const BASE = `http://${window.location.hostname}:5000/api`;
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -155,4 +155,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  deleteBroadcast: (id: number) =>
+    apiFetch<{ success: boolean }>(`/broadcasts/${id}`, { method: 'DELETE' }),
+
+  clearAllBroadcasts: () =>
+    apiFetch<{ success: boolean }>('/broadcasts', { method: 'DELETE' }),
+
+  clearTrials: () =>
+    apiFetch<{ success: boolean; message: string }>('/clear-trials', { method: 'DELETE' }),
 };

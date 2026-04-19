@@ -12,32 +12,58 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 
 // ─── Real QR Scanner ────────────────────────────────────────────────────────
 function RealQRScanner({ onScan }: { onScan: (text: string) => void }) {
+  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+
   useEffect(() => {
-    const scanner = new Html5QrcodeScanner(
-      'qr-reader',
-      { fps: 10, qrbox: { width: 250, height: 250 }, supportedScanTypes: [0, 1] },
-      false
-    );
+    let isMounted = true;
 
-    const success = (text: string) => {
-      scanner.clear();
-      // Only trigger if looks like a token or full URL
-      let token = text;
-      try {
-        const url = new URL(text);
-        token = url.searchParams.get('token') || text;
-      } catch {
-        // Not a URL, use text directly
-      }
-      onScan(token);
-    };
+    // Delay initialization slightly to bypass React 18 Strict Mode double-invoke 
+    // which causes the html5-qrcode UI to duplicate itself.
+    const timer = setTimeout(() => {
+      if (!isMounted) return;
 
-    scanner.render(success, () => {});
+      scannerRef.current = new Html5QrcodeScanner(
+        'qr-reader',
+        { fps: 10, qrbox: { width: 250, height: 250 }, supportedScanTypes: [0, 1] },
+        false
+      );
+
+      const success = async (text: string) => {
+        if (scannerRef.current) {
+          try {
+            await scannerRef.current.clear();
+          } catch (e) {
+            // ignore
+          }
+          scannerRef.current = null;
+        }
+        // Only trigger if looks like a token or full URL
+        let token = text;
+        try {
+          const url = new URL(text);
+          token = url.searchParams.get('token') || text;
+        } catch {
+          // Not a URL, use text directly
+        }
+        onScan(token);
+      };
+
+      scannerRef.current.render(success, () => {});
+    }, 50);
 
     return () => {
-      scanner.clear().catch(() => {});
+      isMounted = false;
+      clearTimeout(timer);
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(() => {});
+        scannerRef.current = null;
+      }
+      // Forcefully clean DOM to prevent duplicate UI artifacts on remount
+      const el = document.getElementById('qr-reader');
+      if (el) el.innerHTML = '';
     };
-  }, [onScan]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="w-full">
@@ -51,23 +77,70 @@ function RealQRScanner({ onScan }: { onScan: (text: string) => void }) {
         #qr-reader__scan_region {
           min-height: 200px;
         }
-        #qr-reader__dashboard_section_csr button,
-        #qr-reader__dashboard_section_swaplink {
-          background: #D4AF37;
+        #qr-reader__dashboard_section_csr button {
+          background: linear-gradient(135deg, #D4AF37 0%, #AA8A2A 100%);
           color: #0A1628;
           border: none;
-          padding: 8px 16px;
-          border-radius: 8px;
+          padding: 10px 24px;
+          border-radius: 10px;
           cursor: pointer;
-          font-weight: bold;
-          margin-top: 10px;
+          font-weight: 700;
+          font-size: 14px;
+          margin-top: 16px;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+        }
+        #qr-reader__dashboard_section_csr button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
         }
         #qr-reader__dashboard_section_swaplink {
           text-decoration: none;
           display: inline-block;
-          margin-bottom: 10px;
+          margin-top: 16px;
+          margin-bottom: 8px;
+          background: rgba(255, 255, 255, 0.1);
+          color: #fff;
+          padding: 10px 24px;
+          border-radius: 10px;
+          cursor: pointer;
+          font-weight: 500;
+          font-size: 14px;
+          transition: all 0.3s ease;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          backdrop-filter: blur(8px);
+        }
+        #qr-reader__dashboard_section_swaplink:hover {
+          background: rgba(255, 255, 255, 0.15);
+          border-color: #D4AF37;
+          color: #D4AF37;
         }
         #qr-reader a { color: #D4AF37; }
+        #qr-reader span {
+          color: rgba(255, 255, 255, 0.7);
+          font-size: 13px;
+        }
+        #qr-reader input[type="file"] {
+          background: rgba(255, 255, 255, 0.05);
+          color: white;
+          padding: 12px;
+          border-radius: 10px;
+          border: 1px dashed rgba(255, 255, 255, 0.3);
+          width: 80%;
+          max-width: 250px;
+          margin: 16px auto;
+          display: block;
+          cursor: pointer;
+        }
+        #qr-reader select {
+          background: rgba(10, 22, 40, 0.9);
+          color: white;
+          border: 1px solid rgba(255,255,255,0.2);
+          padding: 8px;
+          border-radius: 8px;
+          margin-bottom: 12px;
+          outline: none;
+        }
       `}</style>
       <div id="qr-reader" />
     </div>

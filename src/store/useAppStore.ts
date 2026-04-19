@@ -19,6 +19,8 @@ interface AppState {
 
   broadcastMessages: BroadcastMessage[];
   addBroadcast: (msg: BroadcastMessage) => void;
+
+  logout: () => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -61,12 +63,15 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           broadcastMessages: [msg, ...state.broadcastMessages],
         })),
+
+      logout: () => set({ guestProfile: null, activeRole: null }),
     }),
     {
       name: 'safepath-storage',
       partialize: (state) => ({
         guestProfile: state.guestProfile,
         dangerZones: state.dangerZones,
+        activeRole: state.activeRole,
       }),
     }
   )

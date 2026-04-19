@@ -31,9 +31,14 @@ export default function Navbar({ role }: NavbarProps) {
           </span>
           <Link
             to="/"
+            onClick={() => {
+              import('../../store/useAppStore').then(({ useAppStore }) => {
+                useAppStore.getState().logout();
+              });
+            }}
             className="text-white/60 hover:text-gold text-sm transition-colors flex items-center gap-1"
           >
-            ← Home
+            ← Home (Log Out)
           </Link>
         </div>
       </div>

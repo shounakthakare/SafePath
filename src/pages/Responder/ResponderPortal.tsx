@@ -25,15 +25,17 @@ const eventDotColor: Record<string, string> = {
 
 export default function ResponderPortal() {
   const dangerZones = useAppStore((s) => s.dangerZones);
+  const setActiveRole = useAppStore((s) => s.setActiveRole);
   const clock = useClockTick();
   const [lastUpdated, setLastUpdated] = useState(0);
   const [shimmer, setShimmer] = useState(true);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setActiveRole('responder');
     const timeout = setTimeout(() => setShimmer(false), 1500);
     return () => clearTimeout(timeout);
-  }, []);
+  }, [setActiveRole]);
 
   useEffect(() => {
     const id = setInterval(() => setLastUpdated((p) => p + 10), 10000);

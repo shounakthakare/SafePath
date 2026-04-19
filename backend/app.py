@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
@@ -150,6 +156,9 @@ def register_guest():
             'UPDATE rooms SET status = "occupied" WHERE room_number = ?', (room_number,)
         )
         conn.commit()
+        
+    base_url = request.headers.get('Origin', 'http://localhost:5173')
+    send_checkin_notifications(name, room_number, base_url, token, email, mobile)
 
     return jsonify({
         'success': True,
@@ -314,6 +323,121 @@ def create_broadcast():
         )
         conn.commit()
     return jsonify({'success': True}), 201
+
+@app.route('/api/broadcasts/<int:broadcast_id>', methods=['DELETE'])
+def delete_broadcast(broadcast_id):
+    with get_db() as conn:
+        conn.execute('DELETE FROM broadcasts WHERE id = ?', (broadcast_id,))
+        conn.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/broadcasts', methods=['DELETE'])
+def clear_all_broadcasts():
+    with get_db() as conn:
+        conn.execute('DELETE FROM broadcasts')
+        conn.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/clear-trials', methods=['DELETE'])
+def clear_trials():
+    with get_db() as conn:
+        conn.execute('DELETE FROM broadcasts')
+        conn.execute('DELETE FROM checkins')
+        conn.execute('DELETE FROM alerts')
+        conn.execute('UPDATE rooms SET status = "available"')
+        conn.commit()
+    return jsonify({'success': True, 'message': 'All trial data cleared'})
+
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
+import threading
+import io
+
+def send_checkin_notifications(guest_name, room, base_url, token, email, mobile):
+    login_url = f"{base_url}/guest-login?token={token}"
+
+    def send_real_email():
+        my_email = "raghavw2006@gmail.com"
+        my_app_password = "unzk mzpe zqsm rjxj".replace(" ", "")
+
+        msg = MIMEMultipart('related')
+        msg['From'] = my_email
+        msg['To'] = email
+        msg['Subject'] = f"Welcome to SafePath Hospitality - Room {room}"
+
+        html_body = f"""
+        <html><body style="font-family:Arial,sans-serif;background:#0a0e1a;color:#fff;padding:0;margin:0;">
+          <div style="max-width:600px;margin:auto;background:#101827;border-radius:16px;overflow:hidden;">
+            <img src="cid:hotel_banner" alt="Azure Oasis Hotel" style="width:100%;height:220px;object-fit:cover;">
+            <div style="padding:32px;">
+              <h1 style="color:#d4a843;font-size:28px;margin:0 0 8px;">Welcome, {guest_name}!</h1>
+              <p style="color:#a0aec0;font-size:16px;margin:0 0 24px;">
+                You are now checked in to <b style="color:#fff;">Room {room}</b>.<br>
+                Your personalised emergency exit guide is ready below.
+              </p>
+              <div style="text-align:center;background:#1c2a40;border-radius:12px;padding:24px;margin:20px 0;">
+                <p style="color:#e2e8f0;margin:0 0 16px;">Scan this QR code to access your live safety dashboard:</p>
+                <img src="cid:qr_code" alt="QR Code" style="width:200px;height:200px;border-radius:8px;">
+                <p style="color:#718096;font-size:12px;margin:12px 0 0;">
+                  Or visit: <a href="{login_url}" style="color:#d4a843;">{login_url}</a>
+                </p>
+              </div>
+              <p style="color:#718096;font-size:13px;border-top:1px solid #2d3748;padding-top:16px;margin-top:24px;">
+                In an emergency, always follow staff instructions.<br>
+                <b style="color:#d4a843;">SafePath AI</b> - Intelligent Emergency Management
+              </p>
+            </div>
+          </div>
+        </body></html>
+        """
+        msg.attach(MIMEText(html_body, 'html'))
+
+        # Attach hotel banner
+        hotel_img_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'hotel-bg.jpg')
+        try:
+            with open(hotel_img_path, 'rb') as f:
+                hotel_img = MIMEImage(f.read(), _subtype='jpeg')
+                hotel_img.add_header('Content-ID', '<hotel_banner>')
+                hotel_img.add_header('Content-Disposition', 'inline', filename='hotel.jpg')
+                msg.attach(hotel_img)
+        except Exception as e:
+            print(f"Warning: Could not attach hotel image: {e}")
+
+        # Generate and attach QR code
+        try:
+            import qrcode
+            qr = qrcode.QRCode(version=2, box_size=10, border=2)
+            qr.add_data(login_url)
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color="#0a0e1a", back_color="white")
+            buf = io.BytesIO()
+            qr_img.save(buf, format='PNG')
+            buf.seek(0)
+            qr_mime = MIMEImage(buf.read(), _subtype='png')
+            qr_mime.add_header('Content-ID', '<qr_code>')
+            qr_mime.add_header('Content-Disposition', 'inline', filename='qr_code.png')
+            msg.attach(qr_mime)
+        except Exception as e:
+            print(f"Warning: Could not generate QR code: {e}")
+
+        try:
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login(my_email, my_app_password)
+            server.send_message(msg)
+            server.quit()
+            print(f"[OK] Email with hotel image + QR sent to: {email}", flush=True)
+        except Exception as e:
+            print(f"[ERROR] Failed to send email: {e}", flush=True)
+
+    if email:
+        threading.Thread(target=send_real_email, daemon=True).start()
+
+    print(f"[SMS] Simulated SMS to: {mobile}", flush=True)
+    print(f"SafePath: Welcome {guest_name}! Access your live guide: {login_url}", flush=True)
+    print("=" * 50, flush=True)
 
 
 if __name__ == '__main__':

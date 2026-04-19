@@ -67,6 +67,20 @@ export default function GuestDashboard() {
     return () => clearInterval(id);
   }, [showModal]);
 
+  // Auto-logout when staff checks the guest out
+  useEffect(() => {
+    if (!guestProfile || rooms.length === 0) return;
+    const myRoom = rooms.find((r) => r.room_number === guestProfile.roomNumber);
+    if (!myRoom) return;
+    
+    // If the room became available, or occupied by a different guest
+    if (myRoom.status === 'available' || (myRoom.guest_name && myRoom.guest_name !== guestProfile.name)) {
+      useAppStore.getState().logout();
+      toast('You have been checked out. Thank you for staying with us!', { icon: '👋' });
+      navigate('/');
+    }
+  }, [rooms, guestProfile, navigate]);
+
   if (!guestProfile) return null;
 
   const handleSOS = async () => {
