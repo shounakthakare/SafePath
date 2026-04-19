@@ -9,6 +9,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 backend/safepath.db
+backend/serviceAccountKey.json
 .pytest_cache/
 .coverage
 htmlcov/

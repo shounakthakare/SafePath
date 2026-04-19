@@ -11,6 +11,8 @@ import HotelMap from '../../components/HotelMap/HotelMap';
 import { useAppStore } from '../../store/useAppStore';
 import { api } from '../../api/client';
 import type { RoomStatus } from '../../api/client';
+import { db } from '../../firebase';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 
 // Language name → BCP-47 code for SpeechSynthesis
 const LANG_CODE: Record<string, string> = {
@@ -107,13 +109,38 @@ export default function GuestDashboard() {
 
   useEffect(() => {
     fetchRooms();
-    fetchBroadcasts();
-    const id = setInterval(() => {
-      fetchRooms();
-      fetchBroadcasts();
-    }, 3000);
-    return () => clearInterval(id);
-  }, [fetchRooms, fetchBroadcasts]);
+    
+    // Polling for local rooms data (state machine)
+    const rid = setInterval(fetchRooms, 3000);
+
+    // Real-time Firestore for Broadcasts
+    const broadcastQuery = query(collection(db, 'broadcasts'), orderBy('timestamp', 'desc'), limit(10));
+    const unsubBroadcasts = onSnapshot(broadcastQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      const relevant = data.filter((m: any) => 
+        m.target === 'all' || 
+        m.target === `floor${guestProfile?.floor}` || 
+        m.target === `room${guestProfile?.roomNumber}`
+      );
+      setApiBroadcasts(relevant);
+
+      // Speak any new broadcast the guest hasn't heard yet
+      relevant.forEach((msg: any) => {
+        const id = msg.id || msg.timestamp + msg.message;
+        if (!spokenIds.current.has(id)) {
+          spokenIds.current.add(id);
+          // Small delay so voices are loaded
+          setTimeout(() => speak(msg.message, guestProfile?.language || 'English'), 500);
+          toast(`📢 ${msg.message}`, { duration: 6000 });
+        }
+      });
+    });
+
+    return () => {
+      clearInterval(rid);
+      unsubBroadcasts();
+    };
+  }, [fetchRooms, guestProfile]);
 
   // SOS modal countdown
   useEffect(() => {

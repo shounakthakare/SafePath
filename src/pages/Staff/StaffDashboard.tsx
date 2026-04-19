@@ -16,6 +16,8 @@ import HotelMap from '../../components/HotelMap/HotelMap';
 import { useAppStore } from '../../store/useAppStore';
 import { api } from '../../api/client';
 import type { RoomStatus, GuestRecord, StatsResponse, RegisterGuestResponse, ApiAlert, ApiBroadcast } from '../../api/client';
+import { db } from '../../firebase';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 
 type Tab = 'register' | 'alerts' | 'map' | 'guests' | 'broadcast' | 'occupancy' | 'staff';
 
@@ -818,8 +820,24 @@ export default function StaffDashboard() {
   useEffect(() => { 
     setActiveRole('staff');
     fetchRooms(); fetchStats(); fetchAlerts(); fetchBroadcasts(); 
-    const id = setInterval(() => { fetchAlerts(); fetchBroadcasts(); }, 3000);
-    return () => clearInterval(id);
+    
+    // Real-time Firestore listeners
+    const alertsQuery = query(collection(db, 'alerts'), orderBy('timestamp', 'desc'));
+    const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      setAlerts(data);
+    });
+
+    const broadcastsQuery = query(collection(db, 'broadcasts'), orderBy('timestamp', 'desc'), limit(10));
+    const unsubBroadcasts = onSnapshot(broadcastsQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      setBroadcastMessages(data);
+    });
+
+    return () => {
+      unsubAlerts();
+      unsubBroadcasts();
+    };
   }, [fetchRooms, fetchStats, fetchAlerts, fetchBroadcasts, setActiveRole]);
 
   useEffect(() => {

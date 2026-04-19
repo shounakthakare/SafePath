@@ -13,6 +13,7 @@ import uuid
 from deep_translator import GoogleTranslator
 import google.generativeai as genai
 from dotenv import load_dotenv
+from firebase_helper import db_firestore, sync_alert_to_firebase, sync_checkin_to_firebase
 
 load_dotenv()
 
@@ -188,6 +189,20 @@ def register_guest():
             'UPDATE rooms SET status = "occupied" WHERE room_number = ?', (room_number,)
         )
         conn.commit()
+
+        # Sync to Firebase
+        sync_checkin_to_firebase({
+            'name': name,
+            'room_number': room_number,
+            'floor': room['floor'],
+            'language': language,
+            'email': email,
+            'mobile': mobile,
+            'qr_token': token,
+            'checkin_datetime': now,
+            'status': 'active',
+            'guests_count': guests_count
+        })
         
     base_url = request.headers.get('Origin', 'http://localhost:5173')
     send_checkin_notifications(name, room_number, base_url, token, email, mobile)
@@ -250,6 +265,10 @@ def checkout():
             'UPDATE rooms SET status = "available" WHERE room_number = ?', (room_number,)
         )
         conn.commit()
+
+        # Sync update to Firebase (mark as checked out or delete)
+        if db_firestore:
+           db_firestore.collection('checkins').document(str(room_number)).update({'status': 'checked_out', 'checkout_datetime': now})
 
     return jsonify({
         'success': True,
@@ -336,6 +355,18 @@ def create_alert():
         )
         alert_id = cursor.lastrowid
         conn.commit()
+
+        # Sync to Firebase
+        sync_alert_to_firebase({
+            'id': alert_id,
+            'guest_name': guest_name,
+            'room_number': room_number,
+            'floor': floor,
+            'severity': severity,
+            'message': message,
+            'timestamp': now,
+            'status': 'active'
+        })
     
     return jsonify({'success': True, 'id': alert_id, 'severity': severity}), 201
 
@@ -344,6 +375,10 @@ def acknowledge_alert(alert_id):
     with get_db() as conn:
         conn.execute('UPDATE alerts SET status = "acknowledged" WHERE id = ?', (alert_id,))
         conn.commit()
+        
+        # Sync to Firebase
+        if db_firestore:
+            db_firestore.collection('alerts').document(str(alert_id)).update({'status': 'acknowledged'})
     return jsonify({'success': True})
 
 @app.route('/api/alerts/resolve-by-room', methods=['POST'])
@@ -401,7 +436,18 @@ def create_broadcast():
             'INSERT INTO broadcasts (target, message, timestamp) VALUES (?, ?, ?)',
             (target, message, now)
         )
+        cursor = conn.execute('SELECT last_insert_rowid()')
+        b_id = cursor.fetchone()[0]
         conn.commit()
+
+        # Sync to Firebase
+        if db_firestore:
+           db_firestore.collection('broadcasts').document(str(b_id)).set({
+               'id': b_id,
+               'target': target,
+               'message': message,
+               'timestamp': now
+           })
     return jsonify({'success': True}), 201
 
 @app.route('/api/broadcasts/<int:broadcast_id>', methods=['DELETE'])

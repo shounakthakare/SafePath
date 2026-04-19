@@ -1,2 +1,8 @@
 flask
 flask-cors
+deep-translator
+google-generativeai
+python-dotenv
+qrcode
+pillow
+firebase-admin
