@@ -13,7 +13,7 @@ import uuid
 from deep_translator import GoogleTranslator
 import google.generativeai as genai
 from dotenv import load_dotenv
-from firebase_helper import db_firestore, sync_alert_to_firebase, sync_checkin_to_firebase
+from firebase_helper import db_firestore, sync_alert_to_firebase, sync_checkin_to_firebase, sync_staff_to_firebase, delete_staff_from_firebase
 
 load_dotenv()
 
@@ -83,7 +83,9 @@ def init_db():
                 role                TEXT    NOT NULL DEFAULT 'staff'
             );
         ''')
+        conn.commit()
         
+        # Seed defaults
         # Default staff
         conn.execute(
             'INSERT OR IGNORE INTO staff (staff_id, name, pin, role) VALUES (?, ?, ?, ?)',
@@ -98,6 +100,61 @@ def init_db():
                     (num, floor)
                 )
         conn.commit()
+
+def sync_from_cloud():
+    """Restores local SQLite state from Firestore cloud data."""
+    if not db_firestore:
+        print("Firebase not initialized. Skipping cloud sync.")
+        return
+    
+    print("☁️ Syncing data from Cloud to local database...")
+    try:
+        with get_db() as conn:
+            # 1. Sync Staff
+            staff_docs = db_firestore.collection('staff').stream()
+            for doc in staff_docs:
+                d = doc.to_dict()
+                conn.execute(
+                    'INSERT OR REPLACE INTO staff (staff_id, name, pin, role) VALUES (?, ?, ?, ?)',
+                    (d.get('staff_id'), d.get('name'), d.get('pin'), d.get('role', 'staff'))
+                )
+            
+            # 2. Sync Alerts
+            alert_docs = db_firestore.collection('alerts').stream()
+            for doc in alert_docs:
+                d = doc.to_dict()
+                conn.execute(
+                    'INSERT OR REPLACE INTO alerts (id, guest_name, room_number, floor, severity, message, timestamp, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    (d.get('id'), d.get('guest_name'), d.get('room_number'), d.get('floor'), d.get('severity'), d.get('message'), d.get('timestamp'), d.get('status'))
+                )
+
+            # 3. Sync Check-ins & Update Room Status
+            checkin_docs = db_firestore.collection('checkins').stream()
+            for doc in checkin_docs:
+                d = doc.to_dict()
+                conn.execute(
+                    '''INSERT OR REPLACE INTO checkins 
+                       (id, guest_name, room_number, floor, language, email, mobile, guests_count, qr_token, checkin_datetime, checkout_datetime, status) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (d.get('id'), d.get('guest_name'), d.get('room_number'), d.get('floor'), d.get('language'), d.get('email'), d.get('mobile'), d.get('guests_count', 1), d.get('qr_token'), d.get('checkin_datetime'), d.get('checkout_datetime'), d.get('status'))
+                )
+                # Update room status if check-in is active
+                if d.get('status') == 'active':
+                    conn.execute('UPDATE rooms SET status = "occupied" WHERE room_number = ?', (d.get('room_number'),))
+
+            # 4. Sync Broadcasts
+            broadcast_docs = db_firestore.collection('broadcasts').stream()
+            for doc in broadcast_docs:
+                d = doc.to_dict()
+                conn.execute(
+                    'INSERT OR REPLACE INTO broadcasts (id, target, message, timestamp) VALUES (?, ?, ?, ?)',
+                    (d.get('id'), d.get('target', 'all'), d.get('message'), d.get('timestamp'))
+                )
+            
+            conn.commit()
+            print("✅ Cloud sync complete.")
+    except Exception as e:
+        print(f"❌ Error during Cloud sync: {e}")
 
 
 def migrate_db():
@@ -333,7 +390,9 @@ def create_alert():
     floor = int(data.get('floor', 0))
     message = str(data.get('message', ''))
     
-    severity = 1
+    # Use severity from frontend as default, then try to override with Gemini
+    severity = int(data.get('severity', 1))
+    
     if GEMINI_KEY:
         try:
             model = genai.GenerativeModel('gemini-flash-latest')
@@ -386,8 +445,16 @@ def resolve_alerts_by_room():
     data = request.get_json(force=True)
     room_number = int(data.get('roomNumber', 0))
     with get_db() as conn:
+        # Get IDs of alerts that will be acknowledged for syncing
+        ids = [row['id'] for row in conn.execute('SELECT id FROM alerts WHERE room_number = ? AND status = "active"', (room_number,))]
+        
         conn.execute('UPDATE alerts SET status = "acknowledged" WHERE room_number = ? AND status = "active"', (room_number,))
         conn.commit()
+        
+        # Sync to Firebase
+        if db_firestore and ids:
+            for alert_id in ids:
+                db_firestore.collection('alerts').document(str(alert_id)).update({'status': 'acknowledged'})
     return jsonify({'success': True})
 
 # ─── Broadcasts ───────────────────────────────────────────────────────────────
@@ -474,6 +541,20 @@ def clear_trials():
         conn.commit()
     return jsonify({'success': True, 'message': 'All trial data cleared'})
 
+@app.route('/api/maintenance/clear-local', methods=['POST'])
+def clear_local_db():
+    """Wipes the local database file and re-initializes it."""
+    try:
+        if os.path.exists(DB_PATH):
+            os.remove(DB_PATH)
+        init_db()
+        migrate_db()
+        # Optionally we don't sync from cloud here if we want a TOTAL reset,
+        # but usually we want to re-download from cloud after a local clear.
+        return jsonify({'success': True, 'message': 'Local database cleared and re-initialized'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ─── Staff Management ─────────────────────────────────────────────────────────
 
 @app.route('/api/staff/login', methods=['POST'])
@@ -525,6 +606,15 @@ def add_staff():
             (staff_id, name, pin, role)
         )
         conn.commit()
+
+        # Sync to Firebase
+        sync_staff_to_firebase({
+            'staff_id': staff_id,
+            'name': name,
+            'role': role,
+            'pin': pin  # Optionally encrypt/hash this before sync if needed, but for simplicity we'll sync as is
+        })
+
     return jsonify({'success': True, 'message': 'Staff added successfully'}), 201
 
 
@@ -538,6 +628,10 @@ def delete_staff(staff_id):
         if cursor.rowcount == 0:
              return jsonify({'error': 'Staff ID not found'}), 404
         conn.commit()
+        
+        # Sync to Firebase
+        delete_staff_from_firebase(staff_id)
+
     return jsonify({'success': True, 'message': 'Staff deleted successfully'})
 
 import smtplib

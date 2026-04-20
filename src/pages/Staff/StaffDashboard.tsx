@@ -824,7 +824,15 @@ export default function StaffDashboard() {
     // Real-time Firestore listeners
     const alertsQuery = query(collection(db, 'alerts'), orderBy('timestamp', 'desc'));
     const unsubAlerts = onSnapshot(alertsQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      const data = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return { 
+          id: doc.id, 
+          ...d,
+          // Ensure severity is a number for the badge to work
+          severity: Number(d.severity || 1)
+        } as any;
+      });
       setAlerts(data);
     });
 
@@ -946,21 +954,6 @@ export default function StaffDashboard() {
                   </motion.div>
                 ))}
               </AnimatePresence>
-              {resolvedAlerts.length > 0 && (
-                <details className="mt-5">
-                  <summary className="text-white/35 text-sm cursor-pointer hover:text-white/55">
-                    Resolved ({resolvedAlerts.length})
-                  </summary>
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {resolvedAlerts.map((a) => (
-                      <div key={a.id} className="bg-white/5 rounded-xl px-4 py-2 opacity-50 flex items-center gap-2">
-                        <CheckCircle size={13} className="text-safe" />
-                        <span className="text-white/50 text-sm">Room {a.room_number} — {a.guest_name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
             </div>
           )}
 
