@@ -115,25 +115,9 @@ export default function GuestDashboard() {
 
     // Real-time Firestore for Broadcasts
     const broadcastQuery = query(collection(db, 'broadcasts'), orderBy('timestamp', 'desc'), limit(10));
-    const unsubBroadcasts = onSnapshot(broadcastQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      const relevant = data.filter((m: any) => 
-        m.target === 'all' || 
-        m.target === `floor${guestProfile?.floor}` || 
-        m.target === `room${guestProfile?.roomNumber}`
-      );
-      setApiBroadcasts(relevant);
-
-      // Speak any new broadcast the guest hasn't heard yet
-      relevant.forEach((msg: any) => {
-        const id = msg.id || msg.timestamp + msg.message;
-        if (!spokenIds.current.has(id)) {
-          spokenIds.current.add(id);
-          // Small delay so voices are loaded
-          setTimeout(() => speak(msg.message, guestProfile?.language || 'English'), 500);
-          toast(`📢 ${msg.message}`, { duration: 6000 });
-        }
-      });
+    const unsubBroadcasts = onSnapshot(broadcastQuery, () => {
+      // Whenever Firestore updates, we fetch the translated versions from our backend
+      fetchBroadcasts();
     });
 
     return () => {
