@@ -22,7 +22,16 @@ export const MOCK_ALERTS: Alert[] = [
   },
 ];
 
-// ─── 30-unit hospital layout is now handled dynamically by HospitalMap components ─
+// ─── 30-unit hospital (used by legacy FloorPlan; HospitalMap builds its own layout) ─
+export const ROOMS = [
+  // Floor 1
+  { id: '101', label: '101', x: 40,  y: 60,  width: 80, height: 60, floor: 1 },
+  { id: '102', label: '102', x: 40,  y: 130, width: 80, height: 60, floor: 1 },
+  { id: '103', label: '103', x: 40,  y: 200, width: 80, height: 60, floor: 1 },
+  { id: '104', label: '104', x: 300, y: 60,  width: 80, height: 60, floor: 1 },
+  { id: '105', label: '105', x: 300, y: 130, width: 80, height: 60, floor: 1 },
+  { id: '106', label: '106', x: 300, y: 200, width: 80, height: 60, floor: 1 },
+];
 
 // ─── Priority rooms (Responder Portal) ───────────────────────────────────────
 export const MOCK_PRIORITY_ROOMS = [
