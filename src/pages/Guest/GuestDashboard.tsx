@@ -21,61 +21,77 @@ const LANG_CODE: Record<string, string> = {
   Dutch: 'nl-NL', Turkish: 'tr-TR', Polish: 'pl-PL',
 };
 
-let speechQueue: { text: string; langName: string }[] = [];
-let isSpeaking = false;
+let isAudioUnlocked = false;
+
+function unlockAudio() {
+  if (isAudioUnlocked) return;
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') ctx.resume();
+    
+    // Prime SpeechSynthesis with a silent utterance
+    if (window.speechSynthesis) {
+      const silent = new SpeechSynthesisUtterance('');
+      silent.volume = 0;
+      window.speechSynthesis.speak(silent);
+    }
+    isAudioUnlocked = true;
+    console.log("Audio/Speech system unlocked");
+  } catch (e) {
+    console.error("Audio unlock failed", e);
+  }
+}
 
 function processQueue() {
   if (isSpeaking || speechQueue.length === 0) return;
 
-  const { text, langName } = speechQueue.shift()!;
-  if (!window.speechSynthesis) return;
+  const item = speechQueue.shift();
+  if (!item || !window.speechSynthesis) return;
+  const { text, langName } = item;
 
   isSpeaking = true;
-  window.speechSynthesis.cancel(); // Force stop any current (though queue should handle it)
+  
+  // Note: some browsers have bugs with cancel(), but it's often needed to stop overlap.
+  // We wrap speak in a timeout to ensure state is clean.
+  window.speechSynthesis.cancel();
 
-  const utt = new SpeechSynthesisUtterance(text);
-  utt.lang = LANG_CODE[langName] || 'en-US';
-  utt.rate = 0.95;
-  utt.volume = 1;
+  setTimeout(() => {
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = LANG_CODE[langName] || 'en-US';
+    utt.rate = 1.0;
+    utt.volume = 1;
 
-  const doSpeak = () => {
     const voices = window.speechSynthesis.getVoices();
     const match = voices.find(v => v.lang === utt.lang) ||
-      voices.find(v => v.lang.startsWith(utt.lang.slice(0, 2)));
+                  voices.find(v => v.lang.startsWith(utt.lang.slice(0, 2)));
     if (match) utt.voice = match;
 
     utt.onend = () => {
       isSpeaking = false;
-      setTimeout(processQueue, 500); // Small pause between messages
+      setTimeout(processQueue, 300);
     };
-    utt.onerror = () => {
+    utt.onerror = (e) => {
+      console.error("Speech error", e);
       isSpeaking = false;
-      processQueue();
+      setTimeout(processQueue, 300);
     };
 
     window.speechSynthesis.speak(utt);
-  };
-
-  if (window.speechSynthesis.getVoices().length === 0) {
-    window.speechSynthesis.onvoiceschanged = () => {
-      doSpeak();
-      window.speechSynthesis.onvoiceschanged = null;
-    };
-  } else {
-    doSpeak();
-  }
+  }, 100);
 }
 
 function playChime() {
+  if (!isAudioUnlocked) unlockAudio();
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     const ctx = new AudioContextClass();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-    osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.1); // E5
-    osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.2); // G5
+    osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.1);
+    osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.2);
     gain.gain.setValueAtTime(0, ctx.currentTime);
     gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
     gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.4);
@@ -87,6 +103,9 @@ function playChime() {
 }
 
 function speak(text: string, langName: string) {
+  if (!isAudioUnlocked) {
+    console.warn("Speech requested but audio not unlocked by user interaction yet.");
+  }
   playChime();
   speechQueue.push({ text, langName });
   processQueue();
@@ -293,9 +312,11 @@ export default function GuestDashboard() {
 
   return (
     <Layout showBackground={true}>
-      <Navbar role="guest" />
+      <div onClick={unlockAudio} className="min-h-screen flex flex-col">
+        <Navbar role="guest" />
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 p-4 sm:p-6">
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 p-4 sm:p-6">
+
 
         {/* ── LEFT COLUMN ── */}
         <div className="flex flex-col gap-6">
@@ -501,6 +522,9 @@ export default function GuestDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+        </div>
+      </div>
     </Layout>
+
   );
 }
