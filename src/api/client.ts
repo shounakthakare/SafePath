@@ -1,4 +1,4 @@
-const BASE = `http://${window.location.hostname}:5000/api`;
+const BASE = `https://safepath-yzcu.onrender.com/api`;
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
