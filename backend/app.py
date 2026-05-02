@@ -6,7 +6,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import uuid
 from deep_translator import GoogleTranslator
@@ -59,7 +59,7 @@ def register_guest():
             return jsonify({'error': 'Room is already occupied'}), 409
 
         token = str(uuid.uuid4())
-        now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
         checkin_data = {
             'id': token,
@@ -112,7 +112,7 @@ def guest_by_token(token):
 def checkout():
     data = request.get_json(force=True)
     room_number = int(data.get('roomNumber', 0))
-    now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     try:
         checkin = select_one("checkins", {
@@ -208,7 +208,7 @@ def create_alert():
     floor = int(data.get('floor', 0))
     message = str(data.get('message', ''))
     severity = 1
-    now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     alert_id = str(uuid.uuid4())
 
@@ -332,7 +332,7 @@ def create_broadcast():
     data = request.get_json(force=True)
     target = str(data.get('target', 'all'))
     message = str(data.get('message', ''))
-    now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     b_id = str(uuid.uuid4())
     b_data = {'id': b_id, 'target': target, 'message': message, 'timestamp': now}

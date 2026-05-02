@@ -1,4 +1,4 @@
-const BASE = `https://safepath-yzcu.onrender.com/api`;
+const BASE = (import.meta.env.VITE_API_URL || `https://safepath-yzcu.onrender.com`).replace(/\/$/, '') + '/api';
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -235,4 +235,7 @@ export const api = {
 
   clearAllDangerZones: () =>
     apiFetch<{ success: boolean }>('/danger-zones', { method: 'DELETE' }),
+
+  suggestBroadcast: (target: string) =>
+    apiFetch<{ suggestion: string }>(`/ai/suggest-broadcast?target=${encodeURIComponent(target)}`),
 };

@@ -1217,8 +1217,7 @@ export default function StaffDashboard() {
                       const originalText = broadcastText;
                       setBroadcastText('Generating suggestion...');
                       try {
-                        const res = await fetch(`https://safepath-yzcu.onrender.com/api/ai/suggest-broadcast?target=${broadcastTarget}`);
-                        const data = await res.json();
+                        const data = await api.suggestBroadcast(broadcastTarget);
                         setBroadcastText(data.suggestion);
                       } catch (e) {
                         setBroadcastText(originalText || 'Please pay attention to the following instructions.');
